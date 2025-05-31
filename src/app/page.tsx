@@ -1,103 +1,175 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { solveSudoku, canWePlace, Board } from '../lib/solver';
+import Image from 'next/image';
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const emptyBoard: Board = useMemo(
+    () => Array(9).fill(null).map(() => Array(9).fill('.')),
+    []
+  );
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const [board, setBoard] = useState<Board>(emptyBoard);
+  const [inputBoard, setInputBoard] = useState<Board>(emptyBoard);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const inputRefs = useRef<(HTMLInputElement | null)[][]>(
+    Array.from({ length: 9 }, () => Array(9).fill(null))
+  );
+
+  const handleChange = (row: number, col: number, value: string) => {
+    const val = value === '' ? '.' : value;
+
+    if (!/^[1-9.]?$/.test(val)) {
+      setError('Only digits 1-9 or empty cells are allowed.');
+      return;
+    }
+
+    const newInputBoard: Board = inputBoard.map((r) => [...r]);
+    newInputBoard[row][col] = val;
+    setInputBoard(newInputBoard);
+
+    if (val !== '.' && !canWePlace(newInputBoard, row, col, val)) {
+      setError(`❌ ${val} can't be placed at row ${row + 1}, column ${col + 1}.`);
+    } else {
+      setError(null);
+    }
+
+    const newBoard: Board = board.map((r) => [...r]);
+    newBoard[row][col] = val;
+    setBoard(newBoard);
+  };
+
+  const handleSolve = async () => {
+    const boardCopy: Board = inputBoard.map((row) => [...row]);
+    setLoading(true);
+    try {
+      const isValid = boardCopy.every((row, rIdx) =>
+        row.every((cell, cIdx) => cell === '.' || canWePlace(boardCopy, rIdx, cIdx, cell))
+      );
+      if (!isValid) throw new Error('Invalid board: Some inputs conflict with Sudoku rules.');
+
+      await new Promise((res) => setTimeout(res, 500)); // simulate loading
+
+      if (solveSudoku(boardCopy)) {
+        setBoard(boardCopy);
+        setError(null);
+      } else {
+        throw new Error('No solution exists for the given Sudoku puzzle.');
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = () => {
+    setBoard(emptyBoard);
+    setInputBoard(emptyBoard);
+    setError(null);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, row: number, col: number) => {
+    const navigate = (r: number, c: number) => {
+      const next = inputRefs.current[r]?.[c];
+      if (next) next.focus();
+    };
+    switch (e.key) {
+      case 'ArrowUp':
+        if (row > 0) navigate(row - 1, col);
+        break;
+      case 'ArrowDown':
+        if (row < 8) navigate(row + 1, col);
+        break;
+      case 'ArrowLeft':
+        if (col > 0) navigate(row, col - 1);
+        break;
+      case 'ArrowRight':
+        if (col < 8) navigate(row, col + 1);
+        break;
+    }
+  };
+
+  return (
+    <main className="min-h-screen bg-gradient-to-br from-yellow-100 via-white to-gray-300 flex flex-col items-center justify-center p-6">
+      <h1 className="text-4xl font-extrabold text-gray-800 mb-4">Sudoku Solver</h1>
+
+      <p className="text-md text-gray-700 mb-2 max-w-xl text-center">
+        Enter a Sudoku puzzle. Use digits 1–9 for known values and leave cells empty if unknown.
+      </p>
+
+      <div className="w-full max-w-[360px] grid grid-cols-9 gap-0.5 rounded-md">
+        {Array.from({ length: 9 }).map((_, row) =>
+          Array.from({ length: 9 }).map((_, col) => {
+            const inputVal = inputBoard[row][col];
+            const solvedVal = board[row][col];
+            const isSolved = inputVal === '.' && solvedVal !== '.';
+            const isBoldBottom = row === 2 || row === 5;
+            const isBoldRight = col === 2 || col === 5;
+            const isInvalid =
+              inputVal !== '.' &&
+              !canWePlace(inputBoard, row, col, inputVal);
+
+            return (
+              <input
+                key={`${row}-${col}`}
+                type="text"
+                maxLength={1}
+                value={solvedVal === '.' ? '' : solvedVal}
+                onChange={(e) => handleChange(row, col, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, row, col)}
+                ref={(el) => {
+                  inputRefs.current[row][col] = el;
+                }}
+                className={`w-10 h-10 text-center text-lg font-semibold border focus:outline-none 
+                  ${isSolved ? 'bg-green-300' : isInvalid ? 'bg-red-200' : 'bg-white'} 
+                  ${isBoldBottom ? 'border-b-4 border-b-gray-800' : 'border-b'}
+                  ${isBoldRight ? 'border-r-4 border-r-gray-800' : 'border-r'}
+                  text-gray-800`}
+              />
+            );
+          })
+        )}
+      </div>
+
+      <div className="flex gap-4 mt-6">
+        <button
+          onClick={handleSolve}
+          disabled={loading}
+          className="flex items-center justify-center gap-2 px-6 py-2 bg-yellow-300 hover:bg-yellow-400 text-gray-700 rounded text-lg shadow-lg disabled:opacity-50"
+        >
+          {loading ? (
+            <>
+              <svg className="animate-spin h-5 w-5 text-gray-700" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Solving...
+            </>
+          ) : (
+            'Solve Sudoku'
+          )}
+        </button>
+
+        <button
+          onClick={handleReset}
+          className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-md shadow"
+        >
+          Reset
+        </button>
+      </div>
+
+      {error && <p className="mt-4 text-red-600 font-semibold">{error}</p>}
+
+      <div className="mt-10 text-center">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Example:</h2>
+        <p className="text-gray-700 mb-2">This is an example of a Sudoku input you can type manually:</p>
+        <div className="inline-block border border-gray-600 p-2 bg-white">
+          <Image src="/soduku.png" alt="Sudoku Example" width={200} height={200} />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      </div>
+    </main>
   );
 }
